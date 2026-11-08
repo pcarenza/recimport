@@ -106,4 +106,4 @@ if "result" in st.session_state:
     rtk_bytes = build_rtk(recipe, thumb)
     fname = re.sub(r"[^\w\-]+", "_", recipe["title"]).strip("_")[:60] or "recipe"
     st.download_button("⬇️ Download .rtk", rtk_bytes, file_name=f"{fname}.rtk",
-                       mime="application/zip", type="primary")
+                       mime="application/octet-stream", type="primary")
