@@ -1,6 +1,6 @@
 # YouTube → RecetteTek (.rtk)
 
-Streamlit app: YouTube link → transcript (`youtube-transcript-api`) → structured recipe (Claude, forced tool-use JSON) → in-memory `.rtk` zip with a one-click download for My Recipe Box / RecetteTek.
+Streamlit app: YouTube link → transcript (`youtube-transcript-api`) → structured recipe (Gemini, schema-constrained JSON) → in-memory `.rtk` zip with a one-click download for My Recipe Box / RecetteTek.
 
 Files: `app.py` (UI), `extractor.py` (LLM), `rtk.py` (transcript, thumbnail, packaging), `test_rtk.py`.
 
@@ -12,16 +12,16 @@ streamlit run app.py
 ```
 
 ## Deploy on Streamlit Community Cloud (free)
-1. Get an API key at https://console.anthropic.com (Settings → API keys).
+1. Get an API key at https://aistudio.google.com/apikey (free tier available).
 2. Push this repo to GitHub (`git push -u origin main`; `secrets.toml` is git-ignored).
 3. Go to https://share.streamlit.io, sign in with GitHub, click **Create app** → *Deploy a public app from GitHub*.
 4. Pick the repo, branch, and main file `app.py`.
 5. Open **Advanced settings → Secrets** and paste:
    ```toml
-   ANTHROPIC_API_KEY = "sk-ant-..."
+   GEMINI_API_KEY = "AIza..."
    ```
    (Later: app menu ⋮ → Settings → Secrets.)
-6. Click **Deploy**. Anyone with the URL can spend your API credits — set a spend limit in the Anthropic console, or make the app private (Share → restrict viewers).
+6. Click **Deploy**. Anyone with the URL can spend your API credits — the free tier is rate-limited; on a paid key set a budget alert in Google Cloud, or make the app private (Share → restrict viewers).
 
 ## Import into My Recipe Box
 Download the `.rtk`, open it on your phone/computer with RecetteTek (Settings → Import / Export → Import), and pick the file.

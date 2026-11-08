@@ -18,10 +18,10 @@ def secret(name, default=None):
         return os.environ.get(name, default)
 
 
-api_key = secret("ANTHROPIC_API_KEY")
-model = secret("ANTHROPIC_MODEL", DEFAULT_MODEL)
+api_key = secret("GEMINI_API_KEY")
+model = secret("GEMINI_MODEL", DEFAULT_MODEL)
 if not api_key:
-    st.error("ANTHROPIC_API_KEY is not configured (add it to the app's secrets).")
+    st.error("GEMINI_API_KEY is not configured (add it to the app's secrets).")
     st.stop()
 
 
@@ -48,7 +48,7 @@ if st.button("Extract recipe", type="primary", disabled=not url.strip()):
             with st.spinner("Fetching transcript…"):
                 preferred = [l.strip() for l in langs.split(",") if l.strip()] or ["en"]
                 transcript, lang = fetch_transcript(vid, preferred, proxy_config())
-        with st.spinner("Extracting recipe with Claude…"):
+        with st.spinner("Extracting recipe with Gemini…"):
             data = extract_recipe(transcript, api_key, model)
         with st.spinner("Packaging…"):
             thumb = fetch_thumbnail_png(vid)
