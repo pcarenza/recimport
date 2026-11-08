@@ -4,10 +4,11 @@ from __future__ import annotations
 import json
 
 from google import genai
-from google.genai import types
+from google.genai import errors, types
 from pydantic import BaseModel, Field
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-3.8-flash"
+FALLBACK_MODELS = ("gemini-3.8-flash", "gemini-flash-latest")
 
 
 class Recipe(BaseModel):
@@ -35,16 +36,25 @@ SYSTEM = (
 def extract_recipe(transcript: str, api_key: str, model: str = DEFAULT_MODEL,
                    video_title: str = "") -> dict:
     client = genai.Client(api_key=api_key)
-    resp = client.models.generate_content(
-        model=model,
-        contents=f"Video title: {video_title or 'unknown'}\n\nTranscript:\n{transcript[:500_000]}",
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM,
-            response_mime_type="application/json",
-            response_schema=Recipe,
-            temperature=0.2,
-        ),
+    contents = f"Video title: {video_title or 'unknown'}\n\nTranscript:\n{transcript[:500_000]}"
+    config = types.GenerateContentConfig(
+        system_instruction=SYSTEM,
+        response_mime_type="application/json",
+        response_schema=Recipe,
+        temperature=0.2,
     )
+    # Model names get retired often: if the chosen one 404s, try the fallbacks.
+    resp, last_err = None, None
+    for m in dict.fromkeys((model, *FALLBACK_MODELS)):
+        try:
+            resp = client.models.generate_content(model=m, contents=contents, config=config)
+            break
+        except errors.ClientError as e:
+            if e.code != 404:
+                raise
+            last_err = e
+    if resp is None:
+        raise last_err
     if resp.parsed is not None:
         return resp.parsed.model_dump()
     if resp.text:
