@@ -18,10 +18,22 @@ def secret(name, default=None):
         return os.environ.get(name, default)
 
 
-api_key = secret("GEMINI_API_KEY")
+default_key = secret("GEMINI_API_KEY")
 model = secret("GEMINI_MODEL", DEFAULT_MODEL)
+with st.sidebar:
+    st.header("Gemini API key")
+    custom_key = st.text_input(
+        "Use my own key (optional)", type="password", placeholder="AIza...",
+        help="Overrides the app's default free key, e.g. with a paid key. "
+             "Kept only in this browser session; never saved or logged.",
+    ).strip()
+api_key = custom_key or default_key
+if custom_key:
+    st.sidebar.success("Using your key.")
+elif default_key:
+    st.sidebar.info("Using the app's default key.")
 if not api_key:
-    st.error("GEMINI_API_KEY is not configured (add it to the app's secrets).")
+    st.error("No Gemini API key: enter one in the sidebar or set GEMINI_API_KEY in the app's secrets.")
     st.stop()
 
 
