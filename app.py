@@ -20,13 +20,27 @@ def secret(name, default=None):
 
 default_key = secret("GEMINI_API_KEY")
 model = secret("GEMINI_MODEL", DEFAULT_MODEL)
+from streamlit_local_storage import LocalStorage
+
+STORE_KEY = "gemini_api_key"
+store = LocalStorage()  # browser localStorage: lives on this device only
+saved_key = store.getItem(STORE_KEY) or ""
 with st.sidebar:
     st.header("Gemini API key")
     custom_key = st.text_input(
-        "Use my own key (optional)", type="password", placeholder="AIza...",
-        help="Overrides the app's default free key, e.g. with a paid key. "
-             "Kept only in this browser session; never saved or logged.",
+        "Use my own key (optional)", type="password", placeholder="AIza...", value=saved_key,
+        help="Overrides the app's default free key, e.g. with a paid key.",
     ).strip()
+    remember = st.checkbox(
+        "Remember on this device", value=bool(saved_key),
+        help="Stores the key in this browser's localStorage so you don't have to re-enter it. "
+             "Don't use on shared or public computers.",
+    )
+if remember and custom_key and custom_key != saved_key:
+    store.setItem(STORE_KEY, custom_key)
+elif not remember and saved_key:
+    store.eraseItem(STORE_KEY)
+    store.storedItems.pop(STORE_KEY, None)
 api_key = custom_key or default_key
 if custom_key:
     st.sidebar.success("Using your key.")
