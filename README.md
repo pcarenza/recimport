@@ -23,6 +23,9 @@ streamlit run app.py
    (Later: app menu ⋮ → Settings → Secrets.)
 6. Click **Deploy**. Anyone with the URL can spend your API credits — the free tier is rate-limited; on a paid key set a budget alert in Google Cloud, or make the app private (Share → restrict viewers).
 
+## Facebook reels
+Paste a **public** Facebook reel/video link. The app downloads it with `yt-dlp` (direct first, then through the Webshare proxy if configured) and sends the video to Gemini, which uses the speech, on-screen text and post caption. Limits: public videos only, ~19 MB max, and Facebook may block cloud IPs or change its site (update `yt-dlp` if downloads start failing).
+
 ## Import into My Recipe Box
 Download the `.rtk`, open it on your phone/computer with RecetteTek (Settings → Import / Export → Import), and pick the file.
 

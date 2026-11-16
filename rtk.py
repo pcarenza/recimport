@@ -33,6 +33,76 @@ def extract_video_id(url: str) -> str:
     raise ValueError("Could not find a YouTube video id in that link.")
 
 
+_FB_HOSTS = ("facebook.com", "fb.watch", "fb.com")
+MAX_MEDIA_BYTES = 19 * 1024 * 1024  # Gemini inline-data limit is ~20 MB
+
+
+def is_facebook_url(url: str) -> bool:
+    p = urlparse(url.strip() if "//" in url else "https://" + url.strip())
+    host = (p.hostname or "").lower()
+    return any(host == h or host.endswith("." + h) for h in _FB_HOSTS)
+
+
+def fetch_facebook_media(url: str, proxy_urls=(None,)) -> tuple[bytes, str, dict]:
+    """Download a public Facebook reel/video with yt-dlp.
+
+    Tries each proxy in `proxy_urls` in order (None = direct). Returns
+    (mp4 bytes, mime type, info dict with 'description' and 'thumbnail').
+    """
+    import tempfile
+    from pathlib import Path
+
+    import yt_dlp
+
+    last = None
+    for proxy in proxy_urls:
+        with tempfile.TemporaryDirectory() as tmp:
+            opts = {
+                "format": "best[ext=mp4]/best",  # one file with video+audio
+                "outtmpl": str(Path(tmp) / "media.%(ext)s"),
+                "noplaylist": True,
+                "quiet": True,
+                "no_warnings": True,
+                "max_filesize": MAX_MEDIA_BYTES,
+                "socket_timeout": 20,
+                "retries": 2,
+            }
+            if proxy:
+                opts["proxy"] = proxy
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                files = [f for f in Path(tmp).iterdir() if f.is_file()]
+                if not files:
+                    raise RuntimeError("Nothing was downloaded (file may exceed the size limit).")
+                data = files[0].read_bytes()
+                if len(data) > MAX_MEDIA_BYTES:
+                    raise RuntimeError("Video is too large (limit ~19 MB). Try a shorter reel.")
+                mime = {".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
+                        ".m4a": "audio/mp4", ".mp3": "audio/mp3"}.get(files[0].suffix.lower(), "video/mp4")
+                return data, mime, {"description": info.get("description") or "",
+                                    "thumbnail": info.get("thumbnail") or "",
+                                    "title": info.get("title") or ""}
+            except Exception as e:  # try next proxy
+                last = e
+    raise last
+
+
+def fetch_image_png(url: str) -> bytes | None:
+    """Download any image URL and return PNG bytes (None on failure)."""
+    import requests
+    from PIL import Image
+
+    try:
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        out = io.BytesIO()
+        Image.open(io.BytesIO(r.content)).convert("RGB").save(out, "PNG")
+        return out.getvalue()
+    except Exception:
+        return None
+
+
 def fetch_transcript(video_id: str, languages=("en",), proxy_config=None) -> tuple[str, str]:
     """Fetch a transcript (manual or auto-generated). Returns (text, language_code).
 

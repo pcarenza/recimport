@@ -16,3 +16,11 @@ def test_rtk():
     rec = json.loads(z.read("recipes_0.json"))[0]
     assert rec["ingredients"] == "200 g pasta\nsalt" and rec["instructions"] == "Boil\nDrain"
     assert rec["totalTime"] == 30 and rec["preparationTime"] == "10" and rec["pictures"] == [f"{rid}.png"]
+
+
+def test_facebook_urls():
+    from rtk import is_facebook_url
+    for u in ["https://www.facebook.com/reel/123", "https://fb.watch/abc/", "m.facebook.com/watch/?v=1", "https://web.facebook.com/x/videos/1"]:
+        assert is_facebook_url(u)
+    for u in ["https://youtu.be/dQw4w9WgXcQ", "https://notfacebook.com/x", "dQw4w9WgXcQ"]:
+        assert not is_facebook_url(u)

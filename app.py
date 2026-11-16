@@ -2,12 +2,13 @@ import re
 
 import streamlit as st
 
-from extractor import DEFAULT_MODEL, extract_recipe
-from rtk import build_recipe, build_rtk, extract_video_id, fetch_thumbnail_png, fetch_transcript
+from extractor import DEFAULT_MODEL, extract_recipe, extract_recipe_from_media
+from rtk import (build_recipe, build_rtk, extract_video_id, fetch_facebook_media, fetch_image_png,
+                 fetch_thumbnail_png, fetch_transcript, is_facebook_url)
 
-st.set_page_config(page_title="YouTube → RecetteTek", page_icon="🍳")
-st.title("🍳 YouTube → My Recipe Box")
-st.caption("Paste a cooking video link, get a `.rtk` file you can import into RecetteTek.")
+st.set_page_config(page_title="Video → RecetteTek", page_icon="🍳")
+st.title("🍳 Video → My Recipe Box")
+st.caption("Paste a YouTube video or public Facebook reel link, get a `.rtk` file you can import into RecetteTek.")
 
 
 def secret(name, default=None):
@@ -60,35 +61,58 @@ def proxy_config():
     return None
 
 
-url = st.text_input("YouTube link", placeholder="https://www.youtube.com/watch?v=...")
-langs = st.text_input("Preferred subtitle languages (comma separated)", "en")
-manual = st.text_area("Or paste a transcript manually (used if automatic fetching is blocked)", height=100)
+def proxy_urls():
+    """Direct first, then the Webshare residential proxy if configured (Facebook downloads)."""
+    u, p = secret("WEBSHARE_PROXY_USERNAME"), secret("WEBSHARE_PROXY_PASSWORD")
+    return (None, f"http://{u}-rotate:{p}@p.webshare.io:80") if u and p else (None,)
+
+
+url = st.text_input("Video link", placeholder="https://www.youtube.com/watch?v=...  or  https://www.facebook.com/reel/...")
+is_fb = is_facebook_url(url) if url.strip() else False
+if is_fb:
+    st.caption("Facebook reel detected: the video is downloaded and Gemini watches and listens to it (public videos only).")
+    langs, manual = "en", ""
+else:
+    langs = st.text_input("Preferred subtitle languages (comma separated)", "en")
+    manual = st.text_area("Or paste a transcript manually (used if automatic fetching is blocked)", height=100)
 
 if st.button("Extract recipe", type="primary", disabled=not url.strip()):
     try:
-        vid = extract_video_id(url)
-        canonical = f"https://www.youtube.com/watch?v={vid}"
-        if manual.strip():
-            transcript, lang = manual.strip(), "manual"
+        if is_fb:
+            canonical = url.strip()
+            with st.spinner("Downloading reel…"):
+                media, mime, info = fetch_facebook_media(canonical, proxy_urls())
+            with st.spinner("Gemini is watching the video…"):
+                data = extract_recipe_from_media(media, mime, api_key, model, info["description"])
+            thumb = fetch_image_png(info["thumbnail"]) if info["thumbnail"] else None
+            lang, size = "video", len(media)
         else:
-            with st.spinner("Fetching transcript…"):
-                preferred = [l.strip() for l in langs.split(",") if l.strip()] or ["en"]
-                transcript, lang = fetch_transcript(vid, preferred, proxy_config())
-        with st.spinner("Extracting recipe with Gemini…"):
-            data = extract_recipe(transcript, api_key, model)
-        with st.spinner("Packaging…"):
+            vid = extract_video_id(url)
+            canonical = f"https://www.youtube.com/watch?v={vid}"
+            if manual.strip():
+                transcript, lang = manual.strip(), "manual"
+            else:
+                with st.spinner("Fetching transcript…"):
+                    preferred = [l.strip() for l in langs.split(",") if l.strip()] or ["en"]
+                    transcript, lang = fetch_transcript(vid, preferred, proxy_config())
+            with st.spinner("Extracting recipe with Gemini…"):
+                data = extract_recipe(transcript, api_key, model)
             thumb = fetch_thumbnail_png(vid)
-        st.session_state["result"] = (data, canonical, thumb, lang, len(transcript))
+            size = len(transcript)
+        st.session_state["result"] = (data, canonical, thumb, lang, size)
     except Exception as e:
         st.session_state.pop("result", None)
         st.error(f"{type(e).__name__}: {e}")
-        if "block" in str(e).lower() or "IP" in str(e):
+        if not is_fb and ("block" in str(e).lower() or "IP" in str(e)):
             st.info("YouTube is blocking this server's IP. Paste the transcript manually above, "
                     "or configure the optional WEBSHARE_PROXY_* secrets (see README).")
+        elif is_fb:
+            st.info("Facebook download failed. Only public reels/videos work; Facebook may also block "
+                    "this server's IP (the optional WEBSHARE_PROXY_* secrets are tried as a fallback).")
 
 if "result" in st.session_state:
     data, canonical, thumb, lang, n = st.session_state["result"]
-    st.success(f"Transcript fetched ({lang}, {n:,} characters).")
+    st.success(f"Video downloaded ({n/1e6:.1f} MB)." if lang == "video" else f"Transcript fetched ({lang}, {n:,} characters).")
     if thumb:
         st.image(thumb, width=320)
     st.subheader(data.get("title", ""))

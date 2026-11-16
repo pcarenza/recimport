@@ -33,10 +33,8 @@ SYSTEM = (
 )
 
 
-def extract_recipe(transcript: str, api_key: str, model: str = DEFAULT_MODEL,
-                   video_title: str = "") -> dict:
+def _generate(contents, api_key: str, model: str) -> dict:
     client = genai.Client(api_key=api_key)
-    contents = f"Video title: {video_title or 'unknown'}\n\nTranscript:\n{transcript[:500_000]}"
     config = types.GenerateContentConfig(
         system_instruction=SYSTEM,
         response_mime_type="application/json",
@@ -60,3 +58,24 @@ def extract_recipe(transcript: str, api_key: str, model: str = DEFAULT_MODEL,
     if resp.text:
         return json.loads(resp.text)
     raise RuntimeError("Gemini did not return a recipe (possibly blocked by safety filters).")
+
+
+def extract_recipe(transcript: str, api_key: str, model: str = DEFAULT_MODEL,
+                   video_title: str = "") -> dict:
+    contents = f"Video title: {video_title or 'unknown'}\n\nTranscript:\n{transcript[:500_000]}"
+    return _generate(contents, api_key, model)
+
+
+def extract_recipe_from_media(media: bytes, mime: str, api_key: str, model: str = DEFAULT_MODEL,
+                              caption: str = "") -> dict:
+    """Extract a recipe directly from a short video/audio clip (e.g. a Facebook reel).
+
+    Gemini hears the speech and also reads on-screen text; the post caption is
+    passed along because it often contains the ingredient list.
+    """
+    contents = [
+        types.Part.from_bytes(data=media, mime_type=mime),
+        "Extract the recipe from this cooking video. Use the speech and any on-screen text.\n"
+        f"Post caption (may contain ingredients or steps):\n{caption[:5000] or '(none)'}",
+    ]
+    return _generate(contents, api_key, model)
