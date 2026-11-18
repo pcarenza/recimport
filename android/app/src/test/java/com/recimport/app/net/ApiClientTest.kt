@@ -57,6 +57,37 @@ class ApiClientTest {
     }
 
     @Test
+    fun checkServerNullOnSuccess() {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{\"ok\":true}"))
+        assertNull(client.checkServer(base, attempts = 2, delayMs = 1))
+    }
+
+    @Test
+    fun checkServerReportsHttp404() {
+        for (i in 0 until 2) server.enqueue(MockResponse().setResponseCode(404))
+        val msg = client.checkServer(base, attempts = 2, delayMs = 1)
+        assertNotNull(msg)
+        assertTrue(msg!!.contains("HTTP 404"))
+        assertFalse(msg.contains("secret-token"))
+    }
+
+    @Test
+    fun checkServerReportsNotRecipeBackend() {
+        for (i in 0 until 2) server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+        val msg = client.checkServer(base, attempts = 2, delayMs = 1)
+        assertNotNull(msg)
+        assertTrue(msg!!.contains("not the recipe backend"))
+    }
+
+    @Test
+    fun checkServerReportsConnectionFailure() {
+        server.shutdown()
+        val msg = client.checkServer(base, attempts = 2, delayMs = 1)
+        assertNotNull(msg)
+        assertTrue(msg!!.contains("Could not connect") || msg.contains("No server found"))
+    }
+
+    @Test
     fun createJobSendsExpectedRequest() {
         server.enqueue(MockResponse().setResponseCode(202).setBody("{\"id\":\"abc123\"}"))
         val id = client.createJob(settings(), "Pasta \"quoted\"\nline")
@@ -185,7 +216,20 @@ class ApiClientTest {
     @Test
     fun normalizeBaseUrlTable() {
         assertEquals("https://a.example.com", ApiClient.normalizeBaseUrl("  a.example.com/ "))
-        assertEquals("https://a.example.com/api", ApiClient.normalizeBaseUrl("https://a.example.com/api//"))
+        assertEquals("https://a.example.com", ApiClient.normalizeBaseUrl("https://a.example.com/api//"))
+        assertEquals("https://x.onrender.com", ApiClient.normalizeBaseUrl("https://x.onrender.com/docs"))
+        assertEquals("https://x.onrender.com", ApiClient.normalizeBaseUrl("https://x.onrender.com/health?x=1"))
+        assertEquals("https://x.onrender.com", ApiClient.normalizeBaseUrl("https://x.onrender.com/#frag"))
+        assertEquals("https://x.onrender.com", ApiClient.normalizeBaseUrl("HTTPS://x.onrender.com/"))
+        assertEquals("https://x.onrender.com:8443", ApiClient.normalizeBaseUrl("x.onrender.com:8443/docs"))
+        assertEquals("http://localhost:8000", ApiClient.normalizeBaseUrl("http://localhost:8000/docs?a=b"))
+        assertEquals("http://localhost", ApiClient.normalizeBaseUrl("http://localhost"))
+        try {
+            ApiClient.normalizeBaseUrl("https://myservice")
+            fail()
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.startsWith("Backend URL looks incomplete"))
+        }
         assertEquals("http://localhost:8000", ApiClient.normalizeBaseUrl("http://localhost:8000/"))
         assertEquals("http://127.0.0.1:8000", ApiClient.normalizeBaseUrl("http://127.0.0.1:8000"))
         assertEquals("http://10.0.2.2:8000", ApiClient.normalizeBaseUrl("http://10.0.2.2:8000"))

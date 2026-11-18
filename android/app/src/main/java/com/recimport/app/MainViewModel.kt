@@ -61,8 +61,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 val s = Settings(base, store.token, store.geminiKey)
                 _state.value = UiState.Working("Waking the server (the first request can take a minute)…")
-                if (!api.wake(base)) {
-                    _state.value = UiState.Failed("Could not reach the server")
+                val reason = api.checkServer(base)
+                if (reason != null) {
+                    _state.value = UiState.Failed(reason)
                     return@launch
                 }
                 _state.value = UiState.Working("Sending link…")

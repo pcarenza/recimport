@@ -8,13 +8,21 @@ import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.io.InterruptedIOException
+import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
 
 class ApiClient(private val http: OkHttpClient = defaultClient()) {
 
-    fun wake(baseUrl: String, attempts: Int = 12, delayMs: Long = 5000): Boolean {
+    fun wake(baseUrl: String, attempts: Int = 12, delayMs: Long = 5000): Boolean =
+        checkServer(baseUrl, attempts, delayMs) == null
+
+    /** Returns null when the backend answers /health correctly, otherwise a short reason. */
+    fun checkServer(baseUrl: String, attempts: Int = 12, delayMs: Long = 5000): String? {
         val client = http.newBuilder().callTimeout(20, TimeUnit.SECONDS).build()
         val url = baseUrl.trimEnd('/') + "/health"
+        val host = hostOf(baseUrl)
+        var reason: String? = "Could not connect to $host"
         for (i in 0 until attempts) {
             try {
                 val req = Request.Builder().url(url).get().build()
@@ -26,24 +34,31 @@ class ApiClient(private val http: OkHttpClient = defaultClient()) {
                         } catch (e: Exception) {
                             false
                         }
-                        if (ok) return true
+                        if (ok) return null
+                        reason = "$host responded, but it is not the recipe backend - check the Backend URL"
+                    } else {
+                        reason = "The server at $host answered HTTP ${resp.code} for /health - check the Backend URL"
                     }
                 }
+            } catch (e: UnknownHostException) {
+                reason = "No server found at $host - check the Backend URL"
+            } catch (e: InterruptedIOException) {
+                reason = "$host did not answer in time (the free server may still be waking up) - try again in a minute"
             } catch (e: IOException) {
-                // retry
+                reason = "Could not connect to $host (${e.javaClass.simpleName})"
             } catch (e: IllegalArgumentException) {
-                return false
+                return "Backend URL is not valid - check the Backend URL"
             }
             if (i < attempts - 1) {
                 try {
                     Thread.sleep(delayMs)
                 } catch (e: InterruptedException) {
                     Thread.currentThread().interrupt()
-                    return false
+                    return reason
                 }
             }
         }
-        return false
+        return reason
     }
 
     fun createJob(s: Settings, text: String): String {
@@ -148,19 +163,33 @@ class ApiClient(private val http: OkHttpClient = defaultClient()) {
             .readTimeout(60, TimeUnit.SECONDS)
             .build()
 
+        private fun hostOf(baseUrl: String): String =
+            baseUrl.substringAfter("://").substringBefore('/').substringBefore('?')
+                .substringBefore('#').substringAfterLast('@')
+
         fun normalizeBaseUrl(raw: String): String {
             var u = raw.trim()
             if (u.isEmpty()) throw IllegalArgumentException("Backend URL is empty")
             if (!u.contains("://")) u = "https://$u"
-            u = u.trimEnd('/')
-            val lower = u.lowercase()
-            if (lower.startsWith("https://")) return u
-            if (lower.startsWith("http://")) {
-                var host = u.substring("http://".length).substringBefore('/').substringBefore('?')
-                host = host.substringAfterLast('@').substringBefore(':').lowercase()
-                if (host == "localhost" || host == "127.0.0.1" || host == "10.0.2.2") return u
+            val scheme = u.substringBefore("://").lowercase()
+            val rest = u.substringAfter("://")
+            val authority = rest.substringBefore('/').substringBefore('?').substringBefore('#')
+            val hostPort = authority.substringAfterLast('@').lowercase()
+            val host = hostPort.substringBefore(':')
+            if (scheme == "http") {
+                if (host != "localhost" && host != "127.0.0.1" && host != "10.0.2.2") {
+                    throw IllegalArgumentException("Use an https:// URL")
+                }
+            } else if (scheme != "https") {
+                throw IllegalArgumentException("Use an https:// URL")
             }
-            throw IllegalArgumentException("Use an https:// URL")
+            val local = host == "localhost" || host == "127.0.0.1" || host == "10.0.2.2"
+            if (host.isEmpty() || (!local && !host.contains('.') && !host.startsWith("["))) {
+                throw IllegalArgumentException(
+                    "Backend URL looks incomplete - expected something like https://your-service.onrender.com"
+                )
+            }
+            return "$scheme://$hostPort"
         }
 
         private fun optStr(o: JSONObject, vararg keys: String): String? {
