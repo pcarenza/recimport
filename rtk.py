@@ -43,6 +43,25 @@ def is_facebook_url(url: str) -> bool:
     return any(host == h or host.endswith("." + h) for h in _FB_HOSTS)
 
 
+# Progressively smaller selectors, tried in order until a file fits under the cap.
+FB_FORMATS = (
+    "best[ext=mp4][filesize<?18M]/best[filesize<?18M]",
+    "best[ext=mp4][height<=480]/best[height<=480]",
+    "worst[ext=mp4]/worst",
+)
+
+
+def _fb_known_size(info: dict) -> int | None:
+    """Best-known size in bytes from yt-dlp info (top level, else smallest format)."""
+    info = info or {}
+    top = info.get("filesize") or info.get("filesize_approx")
+    if top:
+        return int(top)
+    sizes = [f.get("filesize") or f.get("filesize_approx") for f in info.get("formats") or []]
+    sizes = [int(x) for x in sizes if x]
+    return min(sizes) if sizes else None
+
+
 def fetch_facebook_media(url: str, proxy_urls=(None,)) -> tuple[bytes, str, dict]:
     """Download a public Facebook reel/video with yt-dlp.
 
@@ -54,30 +73,51 @@ def fetch_facebook_media(url: str, proxy_urls=(None,)) -> tuple[bytes, str, dict
 
     import yt_dlp
 
+    mb = 1024 * 1024
     last = None
     for proxy in proxy_urls:
         with tempfile.TemporaryDirectory() as tmp:
-            opts = {
-                "format": "best[ext=mp4]/best",  # one file with video+audio
-                "outtmpl": str(Path(tmp) / "media.%(ext)s"),
-                "noplaylist": True,
-                "quiet": True,
-                "no_warnings": True,
-                "max_filesize": MAX_MEDIA_BYTES,
-                "socket_timeout": 20,
-                "retries": 2,
-            }
-            if proxy:
-                opts["proxy"] = proxy
+            info = {}
             try:
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    info = ydl.extract_info(url, download=True)
-                files = [f for f in Path(tmp).iterdir() if f.is_file()]
+                files = []
+                for fmt in FB_FORMATS:
+                    opts = {
+                        "format": fmt,  # one file with video+audio
+                        "outtmpl": str(Path(tmp) / "media.%(ext)s"),
+                        "noplaylist": True,
+                        "quiet": True,
+                        "no_warnings": True,
+                        "max_filesize": MAX_MEDIA_BYTES,
+                        "socket_timeout": 20,
+                        "retries": 2,
+                    }
+                    if proxy:
+                        opts["proxy"] = proxy
+                    try:
+                        with yt_dlp.YoutubeDL(opts) as ydl:
+                            got = ydl.extract_info(url, download=True)
+                        if got:
+                            info = got
+                    except yt_dlp.utils.DownloadError as e:
+                        if "format" in str(e).lower() and "not available" in str(e).lower():
+                            continue
+                        raise
+                    files = [f for f in Path(tmp).iterdir() if f.is_file()]
+                    if files:
+                        break
                 if not files:
-                    raise RuntimeError("Nothing was downloaded (file may exceed the size limit).")
+                    size = _fb_known_size(info)
+                    if size and size > MAX_MEDIA_BYTES:
+                        raise RuntimeError(
+                            f"This video is too large to process (about {size / mb:.0f} MB; "
+                            f"limit {MAX_MEDIA_BYTES // mb} MB). Try a shorter reel.")
+                    raise RuntimeError("No downloadable video file was found "
+                                       "(the video may be private, removed or too large).")
                 data = files[0].read_bytes()
                 if len(data) > MAX_MEDIA_BYTES:
-                    raise RuntimeError("Video is too large (limit ~19 MB). Try a shorter reel.")
+                    raise RuntimeError(
+                        f"This video is too large to process (about {len(data) / mb:.0f} MB; "
+                        f"limit {MAX_MEDIA_BYTES // mb} MB). Try a shorter reel.")
                 mime = {".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
                         ".m4a": "audio/mp4", ".mp3": "audio/mp3"}.get(files[0].suffix.lower(), "video/mp4")
                 return data, mime, {"description": info.get("description") or "",
