@@ -15,6 +15,7 @@ import os
 import threading
 import time
 import uuid
+from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Optional
@@ -30,7 +31,15 @@ JOB_TTL_SECONDS = 30 * 60
 MAX_JOBS_PER_USER = 20
 MAX_CONCURRENT_JOBS = 2  # free tier has little RAM; reels are buffered in memory
 
-app = FastAPI(title="Video to RecetteTek", version="1.0")
+@asynccontextmanager
+async def lifespan(_app):
+    store = get_store()  # a bad token config raises here, so the deploy fails loudly
+    if not getattr(store, "configured", True):
+        print("WARNING: no APP_TOKEN/APP_TOKENS set; every authenticated request will be rejected")
+    yield
+
+
+app = FastAPI(title="Video to RecetteTek", version="1.0", lifespan=lifespan)
 _executor = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_JOBS)
 _lock = threading.Lock()
 
@@ -97,6 +106,8 @@ def _run_job(job: Job, text: str, api_key: str, model: str, languages: list[str]
 
 
 def _get_job(job_id: str, user: User) -> Job:
+    with _lock:
+        _purge()
     job = _jobs.get(job_id)
     # 404 (not 403) for other users' jobs so ids can't be probed
     if job is None or job.user_id != user.id:
