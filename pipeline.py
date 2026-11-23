@@ -11,7 +11,7 @@ import rtk
 _TRAIL = ".,)!?\"'"
 _URL_RE = re.compile(r"https?://[^\s<>]+", re.I)
 _SCHEMELESS_RE = re.compile(
-    r"(?<![\w/.@-])((?:www\.|m\.)?(?:youtu\.be|youtube\.com|facebook\.com|fb\.watch|fb\.com)/[^\s<>]+)", re.I)
+    r"(?<![\w/.@-])((?:www\.|m\.)?(?:youtu\.be|youtube\.com|facebook\.com|fb\.watch|fb\.com|instagram\.com|instagr\.am)/[^\s<>]+)", re.I)
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 
 
@@ -36,7 +36,7 @@ class PipelineResult:
     data: dict
     canonical_url: str
     thumbnail: bytes | None
-    source: str  # 'youtube' | 'facebook'
+    source: str  # 'youtube' | 'facebook' | 'instagram'
     title: str
 
 
@@ -49,13 +49,14 @@ def run_pipeline(url_or_text: str, *, api_key: str, model: str,
         raise ValueError("No video link found")
     have_proxy = bool(webshare_username and webshare_password)
 
-    if rtk.is_facebook_url(url):
+    if rtk.is_social_video_url(url):
         proxies = (None, f"http://{webshare_username}-rotate:{webshare_password}@p.webshare.io:80") \
             if have_proxy else (None,)
-        media, mime, info = rtk.fetch_facebook_media(url, proxies)
+        media, mime, info = rtk.fetch_social_media(url, proxies)
         data = extractor.extract_recipe_from_media(media, mime, api_key, model, info["description"])
         thumb = rtk.fetch_image_png(info["thumbnail"]) if info.get("thumbnail") else None
-        source, canonical = "facebook", url
+        source = "instagram" if rtk.is_instagram_url(url) else "facebook"
+        canonical = url
     else:
         vid = rtk.extract_video_id(url)
         canonical = f"https://www.youtube.com/watch?v={vid}"

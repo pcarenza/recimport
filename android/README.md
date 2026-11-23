@@ -1,6 +1,6 @@
 # Recipe Importer (Android)
 
-Native Android app (Kotlin, Jetpack Compose). Share a Facebook/YouTube link to it and it calls the backend.
+Native Android app (Kotlin, Jetpack Compose). Share a YouTube, Facebook or Instagram reel link to it and it calls the backend.
 
 ## Get the APK
 1. Open the repository's **Actions** tab on GitHub and choose the latest successful **Android build** run.

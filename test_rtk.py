@@ -24,3 +24,13 @@ def test_facebook_urls():
         assert is_facebook_url(u)
     for u in ["https://youtu.be/dQw4w9WgXcQ", "https://notfacebook.com/x", "dQw4w9WgXcQ"]:
         assert not is_facebook_url(u)
+
+
+def test_instagram_urls():
+    from rtk import is_instagram_url, is_social_video_url
+    for u in ["https://www.instagram.com/reel/abc/?igsh=x", "https://www.instagram.com/p/abc/",
+              "https://instagr.am/p/abc", "m.instagram.com/reel/abc/", "instagram.com/reel/abc/"]:
+        assert is_instagram_url(u) and is_social_video_url(u)
+    for u in ["https://notinstagram.com/reel/abc", "https://youtu.be/dQw4w9WgXcQ", "dQw4w9WgXcQ"]:
+        assert not is_instagram_url(u) and not is_social_video_url(u)
+    assert is_social_video_url("https://fb.watch/abc/")
