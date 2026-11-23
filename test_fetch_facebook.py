@@ -33,7 +33,7 @@ def make_fake(ok_formats, info_extra=None, raise_for=None, calls=None):
 def test_first_selector(monkeypatch):
     calls = []
     monkeypatch.setattr(yt_dlp, "YoutubeDL", make_fake(set(rtk.FB_FORMATS), calls=calls))
-    data, mime, info = rtk.fetch_facebook_media("u")
+    data, mime, info = rtk.fetch_social_media("u")
     assert data == b"video" and mime == "video/mp4"
     assert info == {"description": "D", "thumbnail": "th", "title": "T"}
     assert [c[0] for c in calls] == [rtk.FB_FORMATS[0]]
@@ -42,7 +42,7 @@ def test_first_selector(monkeypatch):
 def test_falls_through_to_third(monkeypatch):
     calls = []
     monkeypatch.setattr(yt_dlp, "YoutubeDL", make_fake({rtk.FB_FORMATS[2]}, calls=calls))
-    data, _, _ = rtk.fetch_facebook_media("u")
+    data, _, _ = rtk.fetch_social_media("u")
     assert data == b"video"
     assert [c[0] for c in calls] == list(rtk.FB_FORMATS)
 
@@ -50,16 +50,57 @@ def test_falls_through_to_third(monkeypatch):
 def test_all_empty_too_large(monkeypatch):
     monkeypatch.setattr(yt_dlp, "YoutubeDL", make_fake(set(), {"filesize_approx": 40 * 1024 * 1024}))
     with pytest.raises(RuntimeError, match="too large"):
-        rtk.fetch_facebook_media("u")
+        rtk.fetch_social_media("u")
 
 
 def test_all_empty_unknown_size(monkeypatch):
     monkeypatch.setattr(yt_dlp, "YoutubeDL", make_fake(set()))
     with pytest.raises(RuntimeError, match="No downloadable video file"):
-        rtk.fetch_facebook_media("u")
+        rtk.fetch_social_media("u")
 
 
 def test_proxy_fallback(monkeypatch):
     monkeypatch.setattr(yt_dlp, "YoutubeDL", make_fake(set(rtk.FB_FORMATS), raise_for={"p1"}))
-    data, _, _ = rtk.fetch_facebook_media("u", proxy_urls=("p1", "p2"))
+    data, _, _ = rtk.fetch_social_media("u", proxy_urls=("p1", "p2"))
     assert data == b"video"
+
+
+def test_alias():
+    assert rtk.fetch_facebook_media is rtk.fetch_social_media
+
+
+def _raising(msg):
+    class Fake:
+        def __init__(self, opts):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def extract_info(self, url, download=True):
+            raise yt_dlp.utils.DownloadError(msg)
+
+    return Fake
+
+
+def test_login_error_translated(monkeypatch):
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", _raising("ERROR: [Instagram] x: login required"))
+    with pytest.raises(RuntimeError) as ei:
+        rtk.fetch_social_media("https://www.instagram.com/reel/x/")
+    assert "login" in str(ei.value) and "yt-dlp" not in str(ei.value)
+    assert ei.value.__cause__ is not None
+
+
+def test_other_error_propagates(monkeypatch):
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", _raising("ERROR: boom"))
+    with pytest.raises(yt_dlp.utils.DownloadError, match="boom"):
+        rtk.fetch_social_media("u")
+
+
+def test_size_error_not_translated(monkeypatch):
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", make_fake(set(), {"filesize": 50 * 1024 * 1024}))
+    with pytest.raises(RuntimeError, match="too large"):
+        rtk.fetch_social_media("u")

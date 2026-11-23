@@ -34,6 +34,7 @@ def extract_video_id(url: str) -> str:
 
 
 _FB_HOSTS = ("facebook.com", "fb.watch", "fb.com")
+_IG_HOSTS = ("instagram.com", "instagr.am")
 MAX_MEDIA_BYTES = 19 * 1024 * 1024  # Gemini inline-data limit is ~20 MB
 
 
@@ -41,6 +42,24 @@ def is_facebook_url(url: str) -> bool:
     p = urlparse(url.strip() if "//" in url else "https://" + url.strip())
     host = (p.hostname or "").lower()
     return any(host == h or host.endswith("." + h) for h in _FB_HOSTS)
+
+
+def is_instagram_url(url: str) -> bool:
+    p = urlparse(url.strip() if "//" in url else "https://" + url.strip())
+    host = (p.hostname or "").lower()
+    return any(host == h or host.endswith("." + h) for h in _IG_HOSTS)
+
+
+def is_social_video_url(url: str) -> bool:
+    """True for Facebook or Instagram links (downloaded with yt-dlp and sent to Gemini as video)."""
+    return is_facebook_url(url) or is_instagram_url(url)
+
+
+class _MediaError(RuntimeError):
+    """Our own user-facing download errors (never translated into the login message)."""
+
+
+_LOGIN_HINTS = ("login", "log in", "cookies", "rate-limit", "rate limit", "authentication", "private")
 
 
 # Progressively smaller selectors, tried in order until a file fits under the cap.
@@ -62,8 +81,8 @@ def _fb_known_size(info: dict) -> int | None:
     return min(sizes) if sizes else None
 
 
-def fetch_facebook_media(url: str, proxy_urls=(None,)) -> tuple[bytes, str, dict]:
-    """Download a public Facebook reel/video with yt-dlp.
+def fetch_social_media(url: str, proxy_urls=(None,)) -> tuple[bytes, str, dict]:
+    """Download a public Facebook or Instagram reel/video with yt-dlp.
 
     Tries each proxy in `proxy_urls` in order (None = direct). Returns
     (mp4 bytes, mime type, info dict with 'description' and 'thumbnail').
@@ -108,14 +127,14 @@ def fetch_facebook_media(url: str, proxy_urls=(None,)) -> tuple[bytes, str, dict
                 if not files:
                     size = _fb_known_size(info)
                     if size and size > MAX_MEDIA_BYTES:
-                        raise RuntimeError(
+                        raise _MediaError(
                             f"This video is too large to process (about {size / mb:.0f} MB; "
                             f"limit {MAX_MEDIA_BYTES // mb} MB). Try a shorter reel.")
-                    raise RuntimeError("No downloadable video file was found "
+                    raise _MediaError("No downloadable video file was found "
                                        "(the video may be private, removed or too large).")
                 data = files[0].read_bytes()
                 if len(data) > MAX_MEDIA_BYTES:
-                    raise RuntimeError(
+                    raise _MediaError(
                         f"This video is too large to process (about {len(data) / mb:.0f} MB; "
                         f"limit {MAX_MEDIA_BYTES // mb} MB). Try a shorter reel.")
                 mime = {".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
@@ -125,7 +144,14 @@ def fetch_facebook_media(url: str, proxy_urls=(None,)) -> tuple[bytes, str, dict
                                     "title": info.get("title") or ""}
             except Exception as e:  # try next proxy
                 last = e
+    if last is not None and not isinstance(last, _MediaError) and any(h in str(last).lower() for h in _LOGIN_HINTS):
+        raise RuntimeError(
+            "This site asked for a login or blocked the request (the video may be private, "
+            "or the server's IP is blocked). Only public videos work; try another one.") from last
     raise last
+
+
+fetch_facebook_media = fetch_social_media  # backward-compatible alias
 
 
 def fetch_image_png(url: str) -> bytes | None:

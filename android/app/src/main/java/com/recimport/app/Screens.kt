@@ -67,7 +67,7 @@ fun App(vm: MainViewModel, state: UiState, sharedText: String?) {
         OutlinedTextField(
             value = link,
             onValueChange = { link = it },
-            label = { Text("Paste a YouTube link or Facebook reel link") },
+            label = { Text("Paste a YouTube, Facebook or Instagram reel link") },
             modifier = Modifier.fillMaxWidth()
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

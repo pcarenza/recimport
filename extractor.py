@@ -68,7 +68,7 @@ def extract_recipe(transcript: str, api_key: str, model: str = DEFAULT_MODEL,
 
 def extract_recipe_from_media(media: bytes, mime: str, api_key: str, model: str = DEFAULT_MODEL,
                               caption: str = "") -> dict:
-    """Extract a recipe directly from a short video/audio clip (e.g. a Facebook reel).
+    """Extract a recipe directly from a short video/audio clip (e.g. a Facebook or Instagram reel).
 
     Gemini hears the speech and also reads on-screen text; the post caption is
     passed along because it often contains the ingredient list.

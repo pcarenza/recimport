@@ -19,6 +19,10 @@ DATA = {"title": "Tasty Pie!", "ingredients": ["1 egg", "2 cups flour"], "instru
     ("watch youtu.be/dQw4w9WgXcQ now", "https://youtu.be/dQw4w9WgXcQ"),
     ("youtube.com/watch?v=dQw4w9WgXcQ", "https://youtube.com/watch?v=dQw4w9WgXcQ"),
     (VID, f"https://www.youtube.com/watch?v={VID}"),
+    ("Try this! https://www.instagram.com/reel/XXXX/?igsh=abc", "https://www.instagram.com/reel/XXXX/?igsh=abc"),
+    ("so good https://www.instagram.com/reel/XXXX/?igsh=abc.", "https://www.instagram.com/reel/XXXX/?igsh=abc"),
+    ("instagram.com/reel/abc/", "https://instagram.com/reel/abc/"),
+    ("see instagr.am/p/abc/!", "https://instagr.am/p/abc/"),
     ("no link here", None),
     ("", None),
 ])
@@ -66,7 +70,7 @@ def test_youtube_fetch_passes_languages_and_proxy(monkeypatch):
 ])
 def test_facebook_path(monkeypatch, creds, expected):
     seen = {}
-    monkeypatch.setattr(pipeline.rtk, "fetch_facebook_media",
+    monkeypatch.setattr(pipeline.rtk, "fetch_social_media",
                         lambda url, proxies: seen.update(url=url, proxies=proxies)
                         or (b"vid", "video/mp4", {"description": "CAPTION", "thumbnail": "http://t/i.jpg"}))
     monkeypatch.setattr(pipeline.extractor, "extract_recipe_from_media",
@@ -77,6 +81,20 @@ def test_facebook_path(monkeypatch, creds, expected):
     assert seen["url"] == "https://fb.watch/abc/"
     assert seen["cap"] == "CAPTION" and seen["media"] == b"vid" and seen["mime"] == "video/mp4"
     assert r.source == "facebook" and r.thumbnail == b"thumb" and r.canonical_url == "https://fb.watch/abc/"
+
+
+def test_instagram_path(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(pipeline.rtk, "fetch_social_media",
+                        lambda url, proxies: seen.update(url=url, proxies=proxies)
+                        or (b"vid", "video/mp4", {"description": "CAPTION", "thumbnail": ""}))
+    monkeypatch.setattr(pipeline.extractor, "extract_recipe_from_media",
+                        lambda media, mime, k, m, cap: seen.update(cap=cap) or dict(DATA))
+    url = "https://www.instagram.com/reel/XXXX/?igsh=abc"
+    r = run_pipeline(f"yum {url}", api_key="K", model="M", webshare_username="u", webshare_password="p")
+    assert seen["url"] == url and seen["cap"] == "CAPTION"
+    assert seen["proxies"] == (None, "http://u-rotate:p@p.webshare.io:80")
+    assert r.source == "instagram" and r.canonical_url == url and r.thumbnail is None
 
 
 def test_build_rtk_file():
